@@ -8,7 +8,7 @@ from threading import Thread
 from Crypto.Cipher import AES
 import argparse
 
-IP = "87.2.93.135"
+IP = "178.128.200.134"
 PORT = 6073
 
 class SendThread(Thread):
@@ -44,8 +44,14 @@ def compress(pub_key):
 
 parser = argparse.ArgumentParser(description='etedex')
 parser.add_argument("-i", "--ip", dest='ip',
-                    help="increase output verbosity", type=str)
-ip = parser.parse_args().ip
+                    help="specify the ip", type=str)
+
+parser.add_argument("-p", dest='psw',
+                    help="specify the password", type=int)
+
+args = parser.parse_args()
+ip = args.ip
+psw = args.psw
 if ip: IP = ip
 
 
@@ -57,8 +63,8 @@ print("mypub ", compress(mypriv * curve.g))
 
 client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 client.connect((IP, PORT))
-client.send(10.to_bytes(32, byteorder='big'))
-client.send(11.to_bytes(32, byteorder='big'))
+client.send(psw.to_bytes(32, byteorder='big'))
+client.send(psw.to_bytes(32, byteorder='big'))
 
 client.send((mypriv * curve.g).x.to_bytes(32, byteorder='big'))
 client.send((mypriv * curve.g).y.to_bytes(32, byteorder='big'))
