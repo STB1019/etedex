@@ -1,3 +1,5 @@
+#! /bin/env python3
+
 import tinyec.ec
 from Crypto.Util.Padding import pad, unpad
 from tinyec import registry
@@ -5,6 +7,7 @@ import secrets
 import socket
 from threading import Thread
 from Crypto.Cipher import AES
+import argparse
 
 IP = "87.2.93.135"
 PORT = 6073
@@ -39,6 +42,12 @@ class ReceiveThread(Thread):
 def compress(pub_key):
     return hex(pub_key.x) + hex(pub_key.y % 2)[2:]
 
+
+
+parser = argparse.ArgumentParser(description='etedex')
+parser.add_argument('--ip', type=ascii, dest='ip',help='the ip of the server')
+ip = parser.parse_args('ip')
+print(ip)
 
 curve = registry.get_curve('brainpoolP256r1')
 mypriv = secrets.randbelow(curve.field.n)
