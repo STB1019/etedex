@@ -1,5 +1,4 @@
 #! /bin/env python3
-
 import tinyec.ec
 from Crypto.Util.Padding import pad, unpad
 from tinyec import registry
@@ -11,7 +10,6 @@ import argparse
 
 IP = "87.2.93.135"
 PORT = 6073
-
 
 class SendThread(Thread):
     def __init__(self, conn, secret, iv):
@@ -45,16 +43,22 @@ def compress(pub_key):
 
 
 parser = argparse.ArgumentParser(description='etedex')
-parser.add_argument('--ip', type=ascii, dest='ip',help='the ip of the server')
-ip = parser.parse_args('ip')
-print(ip)
+parser.add_argument("-i", "--ip", dest='ip',
+                    help="increase output verbosity", type=str)
+ip = parser.parse_args().ip
+if ip: IP = ip
+
+
 
 curve = registry.get_curve('brainpoolP256r1')
 mypriv = secrets.randbelow(curve.field.n)
 print("mypub ", compress(mypriv * curve.g))
 
+
 client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 client.connect((IP, PORT))
+client.send(10.to_bytes(32, byteorder='big'))
+client.send(11.to_bytes(32, byteorder='big'))
 
 client.send((mypriv * curve.g).x.to_bytes(32, byteorder='big'))
 client.send((mypriv * curve.g).y.to_bytes(32, byteorder='big'))
