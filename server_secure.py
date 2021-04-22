@@ -1,5 +1,8 @@
+#! /bin/env python3
 import socket
+import argparse
 from threading import Thread
+
 
 
 class ConnectionProxy(Thread):
@@ -23,6 +26,10 @@ class ConnectionProxy(Thread):
 serv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 serv.bind(('0.0.0.0', 6073))
 serv.listen(2)
+
+
+args = parser.parse_args()
+print(args.accumulate(args.integers))
 
 while True:
 	conn, addr = serv.accept()
