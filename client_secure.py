@@ -1,5 +1,3 @@
-from base64 import b64encode, b64decode
-
 import tinyec.ec
 from Crypto.Util.Padding import pad, unpad
 from tinyec import registry
@@ -7,6 +5,10 @@ import secrets
 import socket
 from threading import Thread
 from Crypto.Cipher import AES
+
+IP = "87.2.93.135"
+PORT = 6073
+
 
 class SendThread(Thread):
     def __init__(self, conn, secret, iv):
@@ -27,7 +29,6 @@ class ReceiveThread(Thread):
         self.secret = secret
         self.cipher = AES.new(secret, AES.MODE_CBC, iv)
 
-
     def run(self):
         while True:
             from_server = self.conn.recv(AES.block_size)
@@ -35,8 +36,8 @@ class ReceiveThread(Thread):
                 print(unpad(self.cipher.decrypt(from_server), AES.block_size).decode())
 
 
-def compress(pubKey):
-    return hex(pubKey.x) + hex(pubKey.y % 2)[2:]
+def compress(pub_key):
+    return hex(pub_key.x) + hex(pub_key.y % 2)[2:]
 
 
 curve = registry.get_curve('brainpoolP256r1')
@@ -44,7 +45,7 @@ mypriv = secrets.randbelow(curve.field.n)
 print("mypub ", compress(mypriv * curve.g))
 
 client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-client.connect(("87.2.93.135", 6073))
+client.connect((IP, PORT))
 
 client.send((mypriv * curve.g).x.to_bytes(32, byteorder='big'))
 client.send((mypriv * curve.g).y.to_bytes(32, byteorder='big'))
