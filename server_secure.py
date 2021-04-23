@@ -31,9 +31,9 @@ serv.listen(1000)
 
 while True:
 	conn, addr = serv.accept()
-	hash_mine = conn.recv(32)
+	hash_mine = conn.recv(40)
 	print(hash_mine)
-	hash_wanted = conn.recv(32)
+	hash_wanted = conn.recv(40)
 	print(hash_wanted)
 	if hash_wanted not in connected_users:
 		connected_users[hash_mine] = (conn, addr, hash_wanted)

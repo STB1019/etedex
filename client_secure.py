@@ -50,7 +50,7 @@ if __name__ == '__main__':
     client.send(args.wanted_fingerprint.encode()) #wo i want to talk with
 
     #public key exchange
-    client.send(gpg.export_keys(args.gpg_key, False, armor=True)) #my public key
+    client.send(gpg.export_keys(args.gpg_key, False, armor=True).encode()) #my public key
     oth_public_key = client.recv(4096)
 
     #check if fingerprint is equal to wanted
@@ -58,11 +58,21 @@ if __name__ == '__main__':
         tmp_file.write(oth_public_key.decode())
 
     temp_key_data = gpg.scan_keys("tmp")
+    ifVERBOSE: print(temp_key_data)
 
-    if temp_key_data.fingerprint != args.wanted_fingerprint:
-        raise "NOT THE ONE I WANTED " + temp_key_data.fingerprint + " " + args.wanted_fingerprint
+    if temp_key_data.curkey["fingerprint"] != args.wanted_fingerprint:
+        raise "NOT THE ONE I WANTED " + temp_key_data.curkey["fingerprint"] + " " + args.wanted_fingerprint
 
-
+    keys = gpg.list_keys()
+    if temp_key_data.curkey["fingerprint"] in keys.fingerprints:
+        if keys.key_map[temp_key_data.curkey["fingerprint"]]["trust"] not in ["f", "u", "m"]:
+            if input(f"TRUST %s (%s) [y/N]"%(temp_key_data.curkey["fingerprint"], keys.key_map[temp_key_data.curkey["fingerprint"]]["uids"][0])) in ["y", "Y", "yes", "YES"]:
+                gpg.trust_keys(temp_key_data.curkey["fingerprint"], "TRUST_MARGINAL")
+                print(temp_key_data.curkey["fingerprint"], "trusted marginally")
+    else:
+        if input(f"TRUST %s (%s) [y/N]" % (temp_key_data.curkey["fingerprint"], keys.key_map[temp_key_data.curkey["fingerprint"]]["uids"][0])) in ["y", "Y", "yes", "YES"]:
+            import_result = gpg.import_keys(oth_public_key)
+            gpg.trust_keys(import_result.fingerprints, "TRUST_MARGINAL")
 
     # #scan and get fingerptint, if already trusted, then not add, or else ask for addition as below
     #
