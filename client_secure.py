@@ -7,9 +7,12 @@ import socket
 from threading import Thread
 from Crypto.Cipher import AES
 import argparse
+import os
 
 IP = "178.128.200.134"
 PORT = 6073
+KEY = None
+PUB_KEY = None
 
 class SendThread(Thread):
     def __init__(self, conn, secret, iv):
@@ -41,40 +44,60 @@ def compress(pub_key):
     return hex(pub_key.x) + hex(pub_key.y % 2)[2:]
 
 
+def gen_key(mypriv, curve):
+	return (mypriv * curve.g)
+
+
 
 parser = argparse.ArgumentParser(description='etedex')
 parser.add_argument("-i", "--ip", dest='ip',
                     help="specify the ip", type=str)
-
-parser.add_argument("-p", dest='psw',
-                    help="specify the password", type=int)
+parser.add_argument("-p", dest='pub',
+                    help="specify the password", type=str)
 
 args = parser.parse_args()
 ip = args.ip
-psw = args.psw
+psw = args.pub
+
+
 if ip: IP = ip
 
-
+k = open("current_key.ini", "r+")
 
 curve = registry.get_curve('brainpoolP256r1')
 mypriv = secrets.randbelow(curve.field.n)
-print("mypub ", compress(mypriv * curve.g))
 
+if os.path.getsize('current_key.ini') != 0: #Todo file controls etc
+	PUB_KEY = k.read()
+else:
+	PUB_KEY = compress(gen_key(mypriv, curve))
+	k.write(PUB_KEY)
 
-client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-client.connect((IP, PORT))
-client.send(psw.to_bytes(32, byteorder='big'))
-client.send(psw.to_bytes(32, byteorder='big'))
+k.close()
+	
 
-client.send((mypriv * curve.g).x.to_bytes(32, byteorder='big'))
-client.send((mypriv * curve.g).y.to_bytes(32, byteorder='big'))
+print("mypub ", PUB_KEY)
 
-othpubx = client.recv(32)
-othpuby = client.recv(32)
-othpub = tinyec.ec.Point(curve, int.from_bytes(othpubx, byteorder='big'), int.from_bytes(othpuby, byteorder='big'))
+if PUB_KEY is not None:
+	client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+	client.connect((IP, PORT))
 
-print("othpub ", compress(othpub))
-secret = mypriv * othpub
+	client.send(PUB_KEY.encode())
+	client.send(psw.encode())
+	KEY = gen_key(mypriv, curve)
+	client.send(KEY.x.to_bytes(32, byteorder='big'))
+	client.send(KEY.y.to_bytes(32, byteorder='big'))
 
-SendThread(client, secret.x.to_bytes(32, byteorder='big'), secret.y.to_bytes(32, byteorder='big')[:16]).start()
-ReceiveThread(client, secret.x.to_bytes(32, byteorder='big'), secret.y.to_bytes(32, byteorder='big')[:16]).start()
+	othpubx = client.recv(32)
+	othpuby = client.recv(32)
+	othpub = tinyec.ec.Point(curve, int.from_bytes(othpubx, byteorder='big'), int.from_bytes(othpuby, byteorder='big'))
+
+	print("othpub ", compress(othpub))
+	secret = mypriv * othpub
+
+	SendThread(client, secret.x.to_bytes(32, byteorder='big'), secret.y.to_bytes(32, byteorder='big')[:16]).start()
+	ReceiveThread(client, secret.x.to_bytes(32, byteorder='big'), secret.y.to_bytes(32, byteorder='big')[:16]).start()
+
+else: 
+	print("You must set a public key first. ./client_secret --set-public [file].pub")
+
