@@ -2,8 +2,9 @@
 import socket
 import argparse
 from threading import Thread
+from collections import defaultdict
 
-
+connected_users = defaultdict(int) 
 
 class ConnectionProxy(Thread):
 	def __init__(self, conns: tuple, addrs: tuple):
@@ -25,18 +26,20 @@ class ConnectionProxy(Thread):
 
 serv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 serv.bind(('0.0.0.0', 6073))
-serv.listen(2)
+serv.listen(1000)
 
-
-args = parser.parse_args()
-print(args.accumulate(args.integers))
 
 while True:
 	conn, addr = serv.accept()
-	print(f"{conn} connected") 
-	conn2, addr2 = serv.accept()
-	print(f"{conn} connected") 
-	conn_th1 = ConnectionProxy((conn, conn2), (addr, addr2))
-	conn_th2 = ConnectionProxy((conn2, conn), (addr2, addr))
-	conn_th1.start()
-	conn_th2.start()
+	hash_mine = conn.recv(32)
+	print(hash_mine)
+	hash_wanted = conn.recv(32)
+	print(hash_wanted)
+	if hash_wanted not in connected_users:
+		connected_users[hash_mine] = (conn, addr, hash_wanted)
+	else:
+		(c, a, h) = connected_users[hash_wanted]
+		if h == hash_mine:
+			connected_users.pop(hash_wanted)
+			ConnectionProxy((conn, c), (addr, a)).start()
+			ConnectionProxy((c, conn), (a, addr)).start()
