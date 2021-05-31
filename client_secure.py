@@ -22,6 +22,7 @@ PORT = 6073
 KEY = None
 PUB_KEY = None
 
+
 class SendThread(Thread):
     def __init__(self, conn, secret, iv):
         Thread.__init__(self)
@@ -29,23 +30,32 @@ class SendThread(Thread):
         self.secret = secret
         self.cipher = AES.new(secret, AES.MODE_CBC, iv)
 
+    def send(self, data):
+        self.conn.send(self.cipher.encrypt(pad(data, AES.block_size)))
+
     def run(self):
         while True:
-            self.conn.send(self.cipher.encrypt(pad(input().encode('utf-8'), AES.block_size)))
+            self.send(input().encode('utf-8'))
 
 
 class ReceiveThread(Thread):
-    def __init__(self, conn, secret, iv):
+    def __init__(self, conn, secret, iv, send_thread):
         Thread.__init__(self)
         self.conn = conn
         self.secret = secret
+        self.send = send_thread
         self.cipher = AES.new(secret, AES.MODE_CBC, iv)
 
     def run(self):
         while True:
             from_server = self.conn.recv(AES.block_size)
             if len(from_server) > 0:
-                print(unpad(self.cipher.decrypt(from_server), AES.block_size).decode())
+                data = unpad(self.cipher.decrypt(from_server), AES.block_size)
+                if data != b"ACK <--":
+                    print("RECV>", data.decode())
+                    self.send.send(b"ACK <--")
+                else:
+                    print(data.decode())
 
 
 def compress(pub_key):
@@ -54,6 +64,7 @@ def compress(pub_key):
 
 def gen_key(mypriv, curve):
     return (mypriv * curve.g)
+
 
 parser = argparse.ArgumentParser(description='etedex')
 parser.add_argument("-i", "--ip", dest='ip',
@@ -72,11 +83,11 @@ if __name__ == '__main__':
         # print(key.privkey.secret_multiplier)
         h = hashlib.sha256()
         h.update(private_key.encode())
-        h.update(random.Random().randint(0, 2**31).to_bytes(4, byteorder='big'))
+        h.update(random.Random().randint(0, 2 ** 31).to_bytes(4, byteorder='big'))
         id = h.digest().hex()
         print("YOUR_ID", id)
         del private_key
-        
+
     oth_id = input("other's id?>")
 
     curve = registry.get_curve('secp256r1')
@@ -85,20 +96,21 @@ if __name__ == '__main__':
 
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client.connect((IP, PORT))
-    
-    client.send(id.encode()) #me
-    client.send(oth_id.encode()) #hashwanted
 
-# my identity
+    client.send(id.encode())  # me
+    client.send(oth_id.encode())  # hashwanted
+
+    # my identity
     my_der = key.verifying_key.to_der()
     print(hexlify(my_der))
 
     client.send(my_der)
-    sig = key.sign(session_pub.x.to_bytes(32, byteorder='big')+session_pub.y.to_bytes(32, byteorder='big'), hashfunc=hashlib.sha256)
+    sig = key.sign(session_pub.x.to_bytes(32, byteorder='big') + session_pub.y.to_bytes(32, byteorder='big'),
+                   hashfunc=hashlib.sha256)
     client.send(len(sig).to_bytes(1, byteorder='big'))
     client.send(sig)
 
-    client.send(session_pub.x.to_bytes(32, byteorder='big')+session_pub.y.to_bytes(32, byteorder='big'))
+    client.send(session_pub.x.to_bytes(32, byteorder='big') + session_pub.y.to_bytes(32, byteorder='big'))
 
     if client.recv(1) != b'\x30':
         exit(-255)
@@ -111,9 +123,9 @@ if __name__ == '__main__':
     othpubx = client.recv(32)
     othpuby = client.recv(32)
 
-#get other identity
+    # get other identity
     oth_pub = VerifyingKey.from_der(b'\x30' + der_len.to_bytes(1, byteorder='big') + oth_der)
-    oth_pub.verify(oth_sig, othpubx+othpuby, hashfunc=hashlib.sha256)
+    oth_pub.verify(oth_sig, othpubx + othpuby, hashfunc=hashlib.sha256)
 
     ecdh = tinyec.ec.Point(curve, int.from_bytes(othpubx, byteorder='big'), int.from_bytes(othpuby, byteorder='big'))
     secret = session_key * ecdh
@@ -121,6 +133,8 @@ if __name__ == '__main__':
     print("session info: ")
     print("session key (mine/theirs): (", session_pub.x, session_pub.y, ") / (", othpubx, othpuby, ") ")
 
-    SendThread(client, secret.x.to_bytes(32, byteorder='big'), secret.y.to_bytes(32, byteorder='big')[:16]).start()
-    ReceiveThread(client, secret.x.to_bytes(32, byteorder='big'), secret.y.to_bytes(32, byteorder='big')[:16]).start()
+    s = SendThread(client, secret.x.to_bytes(32, byteorder='big'), secret.y.to_bytes(32, byteorder='big')[:16])
+    s.start()
 
+    ReceiveThread(client, secret.x.to_bytes(32, byteorder='big'), secret.y.to_bytes(32, byteorder='big')[:16],
+                  s).start()
