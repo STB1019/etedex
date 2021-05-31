@@ -1,4 +1,7 @@
 #! /bin/env python3
+import random
+from binascii import hexlify
+
 import tinyec.ec
 from Crypto.Util.Padding import pad, unpad
 from tinyec import registry
@@ -8,6 +11,11 @@ from threading import Thread
 from Crypto.Cipher import AES
 import argparse
 import os
+
+from ecdsa import SigningKey, VerifyingKey
+from ecdsa.der import encode_sequence, encode_integer
+import hashlib
+import random
 
 IP = "178.128.200.134"
 PORT = 6073
@@ -45,59 +53,74 @@ def compress(pub_key):
 
 
 def gen_key(mypriv, curve):
-	return (mypriv * curve.g)
-
-
+    return (mypriv * curve.g)
 
 parser = argparse.ArgumentParser(description='etedex')
 parser.add_argument("-i", "--ip", dest='ip',
                     help="specify the ip", type=str)
-parser.add_argument("-p", dest='pub',
-                    help="specify the password", type=str)
+parser.add_argument("-k", dest='key',
+                    help="user private ecc key", type=str)
 
-args = parser.parse_args()
-ip = args.ip
-psw = args.pub
+if __name__ == '__main__':
+    args = parser.parse_args()
+    ip = args.ip
+    if ip: IP = ip
 
+    with open(args.key, 'r') as key_f:
+        private_key = "".join(key_f.readlines())
+        key = SigningKey.from_pem(private_key)
+        # print(key.privkey.secret_multiplier)
+        h = hashlib.sha256()
+        h.update(private_key.encode())
+        h.update(random.Random().randint(0, 2**31).to_bytes(4, byteorder='big'))
+        id = h.digest().hex()
+        print("YOUR_ID", id)
+        del private_key
+        
+    oth_id = input("other's id?>")
 
-if ip: IP = ip
+    curve = registry.get_curve('secp256r1')
+    session_key = secrets.randbelow(curve.field.n)
+    session_pub = (session_key * curve.g)
 
-k = open("current_key.ini", "r+")
+    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client.connect((IP, PORT))
+    
+    client.send(id.encode()) #me
+    client.send(oth_id.encode()) #hashwanted
 
-curve = registry.get_curve('brainpoolP256r1')
-mypriv = secrets.randbelow(curve.field.n)
+# my identity
+    my_der = key.verifying_key.to_der()
+    print(hexlify(my_der))
 
-if os.path.getsize('current_key.ini') != 0: #Todo file controls etc
-	PUB_KEY = k.read()
-else:
-	PUB_KEY = compress(gen_key(mypriv, curve))
-	k.write(PUB_KEY)
+    client.send(my_der)
+    sig = key.sign(session_pub.x.to_bytes(32, byteorder='big')+session_pub.y.to_bytes(32, byteorder='big'), hashfunc=hashlib.sha256)
+    client.send(len(sig).to_bytes(1, byteorder='big'))
+    client.send(sig)
 
-k.close()
-	
+    client.send(session_pub.x.to_bytes(32, byteorder='big')+session_pub.y.to_bytes(32, byteorder='big'))
 
-print("mypub ", PUB_KEY)
+    if client.recv(1) != b'\x30':
+        exit(-255)
+    der_len = int.from_bytes(client.recv(1), byteorder='big')
+    oth_der = client.recv(der_len)
 
-if PUB_KEY is not None:
-	client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-	client.connect((IP, PORT))
+    data_len = int.from_bytes(client.recv(1), byteorder='big')
+    oth_sig = client.recv(data_len)
 
-	client.send(PUB_KEY.encode())
-	client.send(psw.encode())
-	KEY = gen_key(mypriv, curve)
-	client.send(KEY.x.to_bytes(32, byteorder='big'))
-	client.send(KEY.y.to_bytes(32, byteorder='big'))
+    othpubx = client.recv(32)
+    othpuby = client.recv(32)
 
-	othpubx = client.recv(32)
-	othpuby = client.recv(32)
-	othpub = tinyec.ec.Point(curve, int.from_bytes(othpubx, byteorder='big'), int.from_bytes(othpuby, byteorder='big'))
+#get other identity
+    oth_pub = VerifyingKey.from_der(b'\x30' + der_len.to_bytes(1, byteorder='big') + oth_der)
+    oth_pub.verify(oth_sig, othpubx+othpuby, hashfunc=hashlib.sha256)
 
-	print("othpub ", compress(othpub))
-	secret = mypriv * othpub
+    ecdh = tinyec.ec.Point(curve, int.from_bytes(othpubx, byteorder='big'), int.from_bytes(othpuby, byteorder='big'))
+    secret = session_key * ecdh
 
-	SendThread(client, secret.x.to_bytes(32, byteorder='big'), secret.y.to_bytes(32, byteorder='big')[:16]).start()
-	ReceiveThread(client, secret.x.to_bytes(32, byteorder='big'), secret.y.to_bytes(32, byteorder='big')[:16]).start()
+    print("session info: ")
+    print("session key (mine/theirs): (", session_pub.x, session_pub.y, ") / (", othpubx, othpuby, ") ")
 
-else: 
-	print("You must set a public key first. ./client_secret --set-public [file].pub")
+    SendThread(client, secret.x.to_bytes(32, byteorder='big'), secret.y.to_bytes(32, byteorder='big')[:16]).start()
+    ReceiveThread(client, secret.x.to_bytes(32, byteorder='big'), secret.y.to_bytes(32, byteorder='big')[:16]).start()
 

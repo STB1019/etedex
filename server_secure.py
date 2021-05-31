@@ -22,24 +22,24 @@ class ConnectionProxy(Thread):
 			if not data: break
 			#from_client += data
 			#print(from_client.decode())
-			
 
-serv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-serv.bind(('0.0.0.0', 6073))
-serv.listen(1000)
+if __name__ == '__main__':
+	serv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+	serv.bind(('0.0.0.0', 6073))
+	serv.listen(1000)
 
 
-while True:
-	conn, addr = serv.accept()
-	hash_mine = conn.recv(32)
-	print(hash_mine)
-	hash_wanted = conn.recv(32)
-	print(hash_wanted)
-	if hash_wanted not in connected_users:
-		connected_users[hash_mine] = (conn, addr, hash_wanted)
-	else:
-		(c, a, h) = connected_users[hash_wanted]
-		if h == hash_mine:
-			connected_users.pop(hash_wanted)
-			ConnectionProxy((conn, c), (addr, a)).start()
-			ConnectionProxy((c, conn), (a, addr)).start()
+	while True:
+		conn, addr = serv.accept()
+		hash_mine = conn.recv(64)
+		print(hash_mine)
+		hash_wanted = conn.recv(64)
+		print(hash_wanted)
+		if hash_wanted not in connected_users:
+			connected_users[hash_mine] = (conn, addr, hash_wanted)
+		else:
+			(c, a, h) = connected_users[hash_wanted]
+			if h == hash_mine:
+				connected_users.pop(hash_wanted)
+				ConnectionProxy((conn, c), (addr, a)).start()
+				ConnectionProxy((c, conn), (a, addr)).start()
